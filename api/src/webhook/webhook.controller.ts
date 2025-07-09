@@ -20,28 +20,18 @@ export class WebhookController {
   @HttpCode(200)
   async handleWebhook(@Req() req: Request, @Res() res: Response) {
     this.logger.log('Webhook recebido');
-    const resourceId = req.headers['x-goog-resource-id'];
-    const channelId = req.headers['x-goog-channel-id'];
 
     try {
-      const changes = await this.googleDriveService.getRecentChanges();
+      const relevantChanges = await this.googleDriveService.getRecentChanges();
 
-      for (const change of changes) {
-        const fileId = change.fileId;
+      for (const change of relevantChanges) {
+        this.logger.log(
+          `Arquivo alterado na pasta do cliente: ${change.clienteName} (fileId: ${change.fileId})`,
+        );
+      }
 
-        const result =
-          await this.googleDriveService.isInsideMovimentacaoContabil(
-            fileId || '',
-          );
-        if (result.inside) {
-          this.logger.log(
-            `Arquivo alterado na pasta do cliente ${result.clienteName}`,
-          );
-        } else {
-          this.logger.log(
-            `Alteração ignorada (fora de "Movimentação contábil")`,
-          );
-        }
+      if (relevantChanges.length === 0) {
+        this.logger.log('Nenhuma alteração relevante detectada.');
       }
     } catch (error) {
       this.logger.error('Erro ao processar webhook: ' + error.message);
