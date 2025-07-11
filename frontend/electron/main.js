@@ -1,19 +1,38 @@
-const { app, BrowserWindow } = require("electron");
-const path = require("path");
+import path from "path";
+import { fileURLToPath } from "url";
+import { app, BrowserWindow, screen, ipcMain } from "electron";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let win;
+
+const expandedSize = { width: 400, height: 500 };
 
 function createWindow() {
-  const win = new BrowserWindow({
-    width: 400,
-    height: 300,
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } =
+    primaryDisplay.workAreaSize;
+
+  win = new BrowserWindow({
+    width: expandedSize.width,
+    height: expandedSize.height,
+    frame: true,
+    transparent: false,
+    alwaysOnTop: false,
+    roundedCorners: true,
+    hasShadow: true,
+    resizable: true,
+    icon: path.join(__dirname, "assets", "logo.ico"),
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"), // opcional, para usar ipcRenderer
+      preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
     },
-    resizable: false,
   });
 
-  win.loadURL("http://localhost:5173"); // endereço do vite dev server
+  win.setMenu(null);
+  win.loadFile(path.join(__dirname, "../dist/index.html"));
 }
 
 app.whenReady().then(createWindow);
