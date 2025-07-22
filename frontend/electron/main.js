@@ -1,6 +1,6 @@
 import path from "path";
 import { fileURLToPath } from "url";
-import { app, BrowserWindow, screen, ipcMain } from "electron";
+import { app, BrowserWindow, screen } from "electron";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,10 +10,6 @@ let win;
 const expandedSize = { width: 400, height: 500 };
 
 function createWindow() {
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } =
-    primaryDisplay.workAreaSize;
-
   win = new BrowserWindow({
     width: expandedSize.width,
     height: expandedSize.height,

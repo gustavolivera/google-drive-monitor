@@ -73,6 +73,8 @@ import { ref } from "vue";
 import { io } from "socket.io-client";
 import axios from "axios";
 
+const url = import.meta.env.VITE_URL;
+
 const groupedLogs = ref({});
 const openedClientes = ref({});
 const openedAnos = ref({});
@@ -103,7 +105,7 @@ function toggleConnection() {
     return;
   }
 
-  socket = io("http://localhost:3000");
+  socket = io();
 
   socket.on("connect", () => {
     isConnected.value = true;
@@ -133,31 +135,25 @@ async function startGoogleAuth() {
   try {
     console.log("🔄 Iniciando autenticação com o Google...");
 
-    // Passo 1: Obter URL de login + code_verifier
-    const response = await axios.get("http://localhost:3000/auth/google/login");
-    console.log("response: ", response);
+    const response = await axios.get(url + "/auth/google/login");
     const { url, codeVerifier } = response.data;
-    console.log("🔗 URL de login:", url);
-    console.log("📌 Code Verifier:", codeVerifier);
 
-    // Passo 2: Abre janela de autenticação
     const authWindow = window.open(url, "_blank", "width=500,height=600");
+
     if (!authWindow) {
       alert("Erro ao abrir janela de login.");
       return;
     }
 
     let attempts = 0;
-    const maxAttempts = 30; // espera ~15 segundos (30 * 500ms)
+    const maxAttempts = 30;
     const pollInterval = 500;
 
     const interval = setInterval(async () => {
       attempts++;
 
       try {
-        const codeResponse = await axios.get(
-          "http://localhost:3000/auth/google/lastcode"
-        );
+        const codeResponse = await axios.get(url + "/auth/google/lastcode");
         const code = codeResponse.data?.code;
 
         if (code) {
@@ -165,9 +161,8 @@ async function startGoogleAuth() {
           authWindow.close();
           console.log("✅ Código recebido:", code);
 
-          // Passo 4: POST com o código + code_verifier recebido da API
           const tokenResponse = await axios.post(
-            "http://localhost:3000/auth/google/callback",
+            env.URL + "/auth/google/callback",
             {
               code: code,
               codeVerifier: codeVerifier,
@@ -176,14 +171,10 @@ async function startGoogleAuth() {
 
           const tokens = tokenResponse.data;
 
-          // Passo 5: POST para webhook/monitor com os tokens
-          await axios.post(
-            "https://0f106adcdfbe.ngrok-free.app/webhook/monitor",
-            {
-              access_token: tokens.access_token,
-              refresh_token: tokens.refresh_token,
-            }
-          );
+          await axios.post(url + "/webhook/monitor", {
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token,
+          });
 
           alert("✅ Google Drive conectado com sucesso!");
         } else if (attempts >= maxAttempts) {
