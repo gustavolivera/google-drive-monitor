@@ -2,13 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { google, drive_v3 } from 'googleapis';
 import * as fs from 'fs';
 import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class GoogleDriveService {
   private drive: drive_v3.Drive;
   private logger = new Logger(GoogleDriveService.name);
   private savedStartPageToken: string | null = null;
+
+  private processedCache = new Map<string, number>();
+
+  private CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 
   private async initOAuthClient() {
     const credentialsPath = path.join(process.cwd(), 'credentials.json');
@@ -24,51 +27,17 @@ export class GoogleDriveService {
     oAuth2Client.setCredentials(tokens);
 
     this.drive = google.drive({ version: 'v3', auth: oAuth2Client });
+
+    this.savedStartPageToken = await this.getStartPageToken();
+    await this.saveStartPageToken(this.savedStartPageToken);
   }
 
-  public async registerWebhook(webhookUrl: string) {
-    if (!this.drive) throw new Error('Drive API não inicializada');
-
-    const startPageTokenResponse = await this.drive.changes.getStartPageToken({
-      supportsAllDrives: true,
-    });
-
-    const channelId = uuidv4(); // ID único do canal
-    const startPageToken = startPageTokenResponse.data.startPageToken;
-
-    const res = await this.drive.changes.watch({
-      pageToken: startPageToken!,
-      supportsAllDrives: true,
-      requestBody: {
-        id: channelId,
-        type: 'web_hook',
-        address: webhookUrl,
-      },
-    });
-
-    this.logger.debug('Webhook registrado com sucesso!');
-    this.logger.debug(`Resource ID: ${res.data.resourceId}`);
-    this.logger.debug(`Channel ID: ${res.data.id}`);
-  }
-
-  async getStartPageToken(): Promise<string> {
-    const res = await this.drive.changes.getStartPageToken({
-      supportsAllDrives: true,
-    });
-
-    this.logger.log('Start page token gerado com sucesso!');
-
-    return res.data.startPageToken!;
-  }
-
-  async getRecentChanges(): Promise<{ fileId: string; clienteName: string }[]> {
-    if (!this.savedStartPageToken) {
-      this.savedStartPageToken = await this.getStartPageToken();
-      await this.saveStartPageToken(this.savedStartPageToken);
-    }
-
+  async getRecentChanges(): Promise<
+    { fileId: string; clienteName: string; ano: string; mes: string }[]
+  > {
+    if (!this.drive) throw new Error('Drive não conectado!');
     const res = await this.drive.changes.list({
-      pageToken: this.savedStartPageToken,
+      pageToken: this.savedStartPageToken || '',
       fields:
         'changes(fileId, removed, file(id, name, parents, createdTime, modifiedTime)), newStartPageToken',
       supportsAllDrives: true,
@@ -76,16 +45,25 @@ export class GoogleDriveService {
 
     const fileCache = new Map<string, { name: string; parents: string[] }>();
     const clientesFolderId = await this.getClientesFolderId();
-    const results: { fileId: string; clienteName: string }[] = [];
+    const results: {
+      fileId: string;
+      clienteName: string;
+      ano: string;
+      mes: string;
+    }[] = [];
+
+    const seenFileIds = new Set<string>(); // ← evita duplicatas
 
     for (const change of res.data.changes ?? []) {
       const fileId = change.fileId;
-      if (!fileId) continue;
+      if (!fileId || seenFileIds.has(fileId)) continue; // ← já viu, ignora
 
       if (change.removed || !change.file) continue;
 
-      // Só considera inserções (com createdTime)
-      if (change.file.createdTime != change.file.modifiedTime) continue;
+      // Só considera inserções recentes
+      const created = new Date(change.file.createdTime || '');
+      const limite = new Date(Date.now() - 10000); // 10 segundos atrás
+      if (!(created > limite)) continue;
 
       try {
         const info = await this.isInsideMovimentacaoContabil(
@@ -94,7 +72,13 @@ export class GoogleDriveService {
           clientesFolderId,
         );
         if (info.inside && info.clienteName) {
-          results.push({ fileId, clienteName: info.clienteName });
+          results.push({
+            fileId,
+            clienteName: info.clienteName,
+            ano: info.ano || 'N/C',
+            mes: info.mes || 'N/C',
+          });
+          seenFileIds.add(fileId); // ← marca como processado
         }
       } catch (err) {
         this.logger.warn(
@@ -107,22 +91,52 @@ export class GoogleDriveService {
       res.data.newStartPageToken &&
       res.data.newStartPageToken !== this.savedStartPageToken
     ) {
-      console.log('res.data.newStartPageToken: ', res.data.newStartPageToken);
       this.savedStartPageToken = res.data.newStartPageToken;
       await this.saveStartPageToken(this.savedStartPageToken);
     }
 
-    return results;
+    const filteredResults: any = [];
+
+    const now = Date.now();
+
+    for (const item of results) {
+      const lastProcessed = this.processedCache.get(item.fileId);
+
+      if (lastProcessed && now - lastProcessed < this.CACHE_TTL_MS) {
+        // Já processado recentemente, ignora
+        continue;
+      }
+
+      // Marca como processado agora
+      this.processedCache.set(item.fileId, now);
+
+      filteredResults.push(item);
+    }
+
+    // Limpa cache removendo entradas expiradas (opcional, para evitar crescimento infinito)
+    for (const [fileId, timestamp] of this.processedCache) {
+      if (now - timestamp > this.CACHE_TTL_MS) {
+        this.processedCache.delete(fileId);
+      }
+    }
+
+    return filteredResults;
   }
 
   async isInsideMovimentacaoContabil(
     fileId: string,
     fileCache: Map<string, { name: string; parents: string[] }>,
     clientesFolderId: string,
-  ): Promise<{ inside: boolean; clienteName?: string }> {
+  ): Promise<{
+    inside: boolean;
+    clienteName?: string;
+    ano?: string;
+    mes?: string;
+  }> {
     const pathIds: string[] = [fileId];
     let currentId = fileId;
 
+    // Sobem na hierarquia até clientesFolderId
     while (true) {
       let metadata = fileCache.get(currentId);
       if (!metadata) {
@@ -146,16 +160,34 @@ export class GoogleDriveService {
       currentId = parentId;
     }
 
+    // Busca "Movimentação contábil"
     for (let i = 0; i < pathIds.length; i++) {
       const id = pathIds[i];
       const metadata = fileCache.get(id)!;
       if (metadata.name === 'Movimentação contábil') {
         const clienteIndex = i + 1;
-        if (clienteIndex < pathIds.length) {
-          const clienteId = pathIds[clienteIndex];
-          const clienteMetadata = fileCache.get(clienteId)!;
-          return { inside: true, clienteName: clienteMetadata.name };
-        }
+        const anoIndex = i - 1;
+        const mesIndex = i - 2;
+
+        // Cliente fica logo acima (índice +1)
+        const clienteName =
+          clienteIndex < pathIds.length
+            ? fileCache.get(pathIds[clienteIndex])?.name
+            : undefined;
+
+        // Ano e mês ficam abaixo, ou seja, índices negativos na array que foi construída subindo a hierarquia.
+        // Como pathIds foi construído subindo (do arquivo para cima), ano e mês estão antes de 'Movimentação contábil' na lista, nos índices i-1 e i-2.
+        const ano =
+          anoIndex >= 0 ? fileCache.get(pathIds[anoIndex])?.name : undefined;
+        const mes =
+          mesIndex >= 0 ? fileCache.get(pathIds[mesIndex])?.name : undefined;
+
+        return {
+          inside: true,
+          clienteName,
+          ano,
+          mes,
+        };
       }
     }
 
@@ -173,44 +205,19 @@ export class GoogleDriveService {
     return res.data.files[0].id ?? '';
   }
 
-  async getFileParents(fileId: string): Promise<string[]> {
-    const parents: string[] = [];
-    let currentId = fileId;
-
-    while (true) {
-      const res = await this.drive.files.get({
-        fileId: currentId,
-        fields: 'id, name, parents',
-      });
-
-      const file = res.data;
-      if (!file) break;
-
-      if (!file.parents || file.parents.length === 0) break;
-
-      const parentId = file.parents[0];
-      parents.push(parentId);
-      currentId = parentId;
-    }
-
-    return parents;
-  }
-
-  async getFileName(fileId: string): Promise<string> {
-    const res = await this.drive.files.get({
-      fileId,
-      fields: 'name',
+  async getStartPageToken(): Promise<string> {
+    const res = await this.drive.changes.getStartPageToken({
+      supportsAllDrives: true,
     });
-    return res.data.name ?? 'Nome não encontrado';
+
+    this.logger.log('Start page token gerado com sucesso!');
+
+    return res.data.startPageToken!;
   }
 
   async saveStartPageToken(token: string) {
     this.savedStartPageToken = token;
 
     this.logger.log(`Salvando start page token: ${this.savedStartPageToken}`);
-  }
-
-  async getSavedStartPageToken(): Promise<string | null> {
-    return this.savedStartPageToken;
   }
 }

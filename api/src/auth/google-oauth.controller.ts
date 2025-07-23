@@ -1,17 +1,22 @@
+import { GoogleDriveService } from './../google-drive/google-drive.service';
+import { google } from 'googleapis';
 import { Controller, Get, Query, Res, Body, Post } from '@nestjs/common';
 import { GoogleOAuthService } from './google-oauth.service';
 import { Response } from 'express';
 
+let lastGoogleCode: string | null = null; // variável em memória
+
 @Controller('auth/google')
 export class GoogleOAuthController {
-  constructor(private readonly googleOAuthService: GoogleOAuthService) {}
+  constructor(
+    private readonly googleOAuthService: GoogleOAuthService,
+    private readonly googleDriveService: GoogleDriveService,
+  ) {}
 
   // Endpoint para gerar URL de autorização
   @Get('login')
   async login() {
-    const { url, codeVerifier } =
-      await this.googleOAuthService.generateAuthUrl();
-    // Você deve enviar o codeVerifier para o front armazenar para depois enviar na callback
+    const { url, codeVerifier } = this.googleOAuthService.generateAuthUrl();
     return { url, codeVerifier };
   }
 
@@ -22,6 +27,18 @@ export class GoogleOAuthController {
       body.code,
       body.codeVerifier,
     );
-    return tokens;
+
+    await this.googleDriveService.setCredentials(tokens);
+  }
+
+  @Get('callback')
+  handleGoogleRedirect(@Query('code') code: string, @Res() res: Response) {
+    lastGoogleCode = code;
+    res.send('✅ Login feito com sucesso. Pode fechar esta janela.');
+  }
+
+  @Get('lastcode')
+  getLastCode() {
+    return { code: lastGoogleCode };
   }
 }

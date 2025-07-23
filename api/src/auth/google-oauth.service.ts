@@ -25,7 +25,6 @@ export class GoogleOAuthService implements OnModuleInit {
   generateAuthUrl() {
     const codeVerifier = generators.codeVerifier();
     const codeChallenge = generators.codeChallenge(codeVerifier);
-    console.log('this.client: ', this.client);
 
     const url = this.client.authorizationUrl({
       scope: 'openid email profile https://www.googleapis.com/auth/drive',
@@ -45,6 +44,6 @@ export class GoogleOAuthService implements OnModuleInit {
       { code_verifier: codeVerifier },
     );
 
-    return tokenSet; // contém access_token, refresh_token, id_token etc.
+    return tokenSet;
   }
 }
