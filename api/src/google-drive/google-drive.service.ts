@@ -61,9 +61,9 @@ export class GoogleDriveService {
       if (change.removed || !change.file) continue;
 
       // Só considera inserções recentes
-      const created = new Date(change.file.createdTime || '');
-      const limite = new Date(Date.now() - 10000); // 10 segundos atrás
-      if (!(created > limite)) continue;
+      // const created = new Date(change.file.createdTime || '');
+      // const limite = new Date(Date.now() - 10000); // 10 segundos atrás
+      // if (!(created > limite)) continue;
 
       try {
         const info = await this.isInsideMovimentacaoContabil(

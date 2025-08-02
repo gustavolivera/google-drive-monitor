@@ -1,5 +1,5 @@
 {
-  "main": "electron/main.js",
+  "main": "main.ts",
   "name": "frontend",
   "private": true,
   "version": "0.0.0",
@@ -8,22 +8,20 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
-    "start": "electron .",
-    "electron:build": "electron-builder"
+    "start": "vite"
   },
   "build": {
     "appId": "com.seuapp.id",
     "productName": "MeuApp",
     "files": [
-      "dist/**/*",
-      "electron/**/*"
+      "dist/**/*"
     ],
     "directories": {
-      "buildResources": "electron/assets"
+      "buildResources": "/assets"
     },
     "win": {
       "target": "nsis",
-      "icon": "electron/assets/icon.ico"
+      "icon": "/assets/vue.svg"
     }
   },
   "dependencies": {
@@ -37,13 +35,10 @@
     "@vitejs/plugin-vue": "^6.0.0",
     "@vue/tsconfig": "^0.7.0",
     "autoprefixer": "^10.4.21",
-    "electron": "^37.2.0",
-    "electron-builder": "^26.0.12",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.11",
     "typescript": "~5.8.3",
     "vite": "^7.0.3",
-    "vite-plugin-electron": "^0.29.0",
     "vue-tsc": "^2.2.12"
   }
 }
