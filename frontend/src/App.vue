@@ -1,4 +1,5 @@
 <template>
+  <router-view />
   <div class="widget-container">
     <!-- 🔌 Ícone de conexão -->
     <div
@@ -73,7 +74,7 @@ import { ref } from "vue";
 import { io } from "socket.io-client";
 import axios from "axios";
 
-const url = import.meta.env.VITE_URL;
+const apiUrl = import.meta.env.VITE_URL;
 
 const groupedLogs = ref({});
 const openedClientes = ref({});
@@ -105,7 +106,7 @@ function toggleConnection() {
     return;
   }
 
-  socket = io();
+  socket = io("http://localhost:3000");
 
   socket.on("connect", () => {
     isConnected.value = true;
@@ -133,60 +134,37 @@ function toggleConnection() {
 
 async function startGoogleAuth() {
   try {
-    console.log("🔄 Iniciando autenticação com o Google...");
-
-    const response = await axios.get(url + "/auth/google/login");
+    const response = await axios.get(`${apiUrl}/auth/google/login`);
     const { url, codeVerifier } = response.data;
 
     const authWindow = window.open(url, "_blank", "width=500,height=600");
 
     if (!authWindow) {
-      alert("Erro ao abrir janela de login.");
       return;
     }
 
-    let attempts = 0;
-    const maxAttempts = 30;
-    const pollInterval = 500;
+    const handleMessage = async (event) => {
+      if (event.origin !== window.location.origin) return;
+      const code = event.data.code;
+      if (!code) return;
 
-    const interval = setInterval(async () => {
-      attempts++;
+      window.removeEventListener("message", handleMessage);
+      authWindow.close();
 
       try {
-        const codeResponse = await axios.get(url + "/auth/google/lastcode");
-        const code = codeResponse.data?.code;
-
-        if (code) {
-          clearInterval(interval);
-          authWindow.close();
-          console.log("✅ Código recebido:", code);
-
-          const tokenResponse = await axios.post(
-            env.URL + "/auth/google/callback",
-            {
-              code: code,
-              codeVerifier: codeVerifier,
-            }
-          );
-
-          const tokens = tokenResponse.data;
-
-          await axios.post(url + "/webhook/monitor", {
-            access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token,
-          });
-
-          alert("✅ Google Drive conectado com sucesso!");
-        } else if (attempts >= maxAttempts) {
-          clearInterval(interval);
-          authWindow.close();
-        }
+        await axios.post(`${apiUrl}/auth/google/callback`, {
+          code,
+          codeVerifier,
+        });
+        alert("🎉 Autenticado!");
       } catch (err) {
-        console.log("⌛ Aguardando login...");
+        alert("Erro ao obter o token de login:", err);
       }
-    }, pollInterval);
+    };
+
+    window.addEventListener("message", handleMessage);
   } catch (error) {
-    alert("Erro ao conectar com Google");
+    alert("Erro ao iniciar login:", error);
   }
 }
 </script>

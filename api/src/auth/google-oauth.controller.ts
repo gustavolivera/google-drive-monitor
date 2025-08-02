@@ -1,10 +1,16 @@
 import { GoogleDriveService } from './../google-drive/google-drive.service';
 import { google } from 'googleapis';
-import { Controller, Get, Query, Res, Body, Post } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  Res,
+  Body,
+  Post,
+  Logger,
+} from '@nestjs/common';
 import { GoogleOAuthService } from './google-oauth.service';
 import { Response } from 'express';
-
-let lastGoogleCode: string | null = null; // variável em memória
 
 @Controller('auth/google')
 export class GoogleOAuthController {
@@ -31,14 +37,10 @@ export class GoogleOAuthController {
     await this.googleDriveService.setCredentials(tokens);
   }
 
+  // Endpoint para lidar com o redirecionamento do Google após login
   @Get('callback')
   handleGoogleRedirect(@Query('code') code: string, @Res() res: Response) {
-    lastGoogleCode = code;
-    res.send('✅ Login feito com sucesso. Pode fechar esta janela.');
-  }
-
-  @Get('lastcode')
-  getLastCode() {
-    return { code: lastGoogleCode };
+    const redirectUrl = `http://localhost:5173/auth/google/callback?code=${code}`;
+    return res.redirect(redirectUrl);
   }
 }
