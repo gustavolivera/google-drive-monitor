@@ -22,7 +22,7 @@ services:
       context: ./frontend
     container_name: vue_frontend
     ports:
-      - "5173:5173" # porta padrão para serve no build production
+      - "5173:5173"
     restart: unless-stopped
     networks:
       - default
