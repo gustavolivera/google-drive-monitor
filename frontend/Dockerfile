@@ -8,11 +8,7 @@ COPY . .
 RUN npm install --frozen-lockfile
 RUN npm run build
 
-# Etapa final: runtime do Electron
 FROM node:20-alpine
-
-# Instalar o Electron globalmente
-RUN npm install -g electron
 
 WORKDIR /app
 
@@ -22,5 +18,7 @@ COPY --from=builder /app /app
 # Copia o .env gerado dinamicamente
 COPY .env .env
 
-# Comando para iniciar o Electron app
-CMD ["electron", "."]
+# Expõe a porta padrão do Vite (5173)
+EXPOSE 5173
+
+CMD ["npm", "run", "dev"]
